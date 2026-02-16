@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Taxi Trips Visual Analytics</title>
+  <!-- Run locally: python -m http.server
+       Then open: http://localhost:8000/component/test.html -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --line: #d8e1ed;
+      --text: #122132;
+      --muted: #5a6d84;
+      --accent: #1e6fae;
+      --accent-dark: #145680;
+      --sel: #d97706;
+      --warn: #9a3412;
+      --err: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--text);
+      background: linear-gradient(160deg, #f7f9fd 0%, #edf3fb 100%);
+    }
+
+    .app {
+      width: 100%;
+      min-height: 100vh;
+      padding: 12px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
+    }
+
+    .top-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .mode-btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 0;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .mode-btn:hover { border-color: #b8c8df; }
+    .mode-btn.active {
+      background: #e8f2fb;
+      border-color: #8db6de;
+      color: #0d3f67;
+    }
+
+    .mode-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .bottom-row {
+      display: grid;
+      grid-template-columns: 32% 36% 32%;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 0;
+      box-shadow: 0 2px 10px rgba(18, 33, 50, 0.05);
+      padding: 10px;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto auto 1fr;
+      gap: 6px;
+    }
+
+    .title {
+      font-size: 14px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .link-btn {
+      border: 0;
+      background: transparent;
+      color: var(--accent-dark);
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 0;
+      font-size: 12px;
+    }
+
+    .chart {
+      width: 100%;
+      height: 100%;
+      min-height: 220px;
+    }
+
+    svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .axis text {
+      font-size: 11px;
+      fill: var(--muted);
+    }
+
+    .axis path, .axis line {
+      stroke: #c9d5e6;
+    }
+
+    .grid line {
+      stroke: #edf2f8;
+    }
+
+    .bar {
+      fill: var(--accent);
+      cursor: pointer;
+    }
+
+    .bar:hover { fill: var(--accent-dark); }
+    .bar.selected {
+      fill: #b76400;
+      stroke: var(--sel);
+      stroke-width: 1.5;
+    }
+
+    .point {
+      fill: rgba(30, 111, 174, 0.35);
+      stroke: rgba(19, 74, 112, 0.45);
+      stroke-width: 0.5;
+    }
+
+    .point.hl {
+      fill: rgba(217, 119, 6, 0.9);
+      stroke: #8a4b00;
+      stroke-width: 1;
+    }
+
+    .table-wrap {
+      border: 1px solid var(--line);
+      border-radius: 0;
+      overflow: auto;
+      min-height: 260px;
+      max-height: calc(100vh - 240px);
+      background: #fff;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 12px;
+    }
+
+    th, td {
+      border-bottom: 1px solid #edf2f8;
+      padding: 6px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f7faff;
+      color: #1d3552;
+    }
+
+    tr:hover td { background: #fbfdff; }
+
+    .kpi {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .kpi strong { color: var(--text); }
+
+    .warn {
+      font-size: 12px;
+      color: var(--warn);
+      min-height: 18px;
+    }
+
+    .error {
+      border: 1px solid #fecaca;
+      background: #fff5f5;
+      color: var(--err);
+      border-radius: 0;
+      padding: 10px;
+      font-size: 13px;
+    }
+
+    .tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.94);
+      color: #fff;
+      padding: 6px 8px;
+      font-size: 11px;
+      border-radius: 0;
+      line-height: 1.35;
+      opacity: 0;
+      transition: opacity 80ms linear;
+      z-index: 9999;
+    }
+
+    @media (max-width: 1200px) {
+      .bottom-row { grid-template-columns: 1fr; }
+      .top-row { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      .table-wrap { max-height: 320px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div>
+      <div class="top-row">
+        <button id="btnHour" class="mode-btn">Trips by Hour</button>
+        <button id="btnDay" class="mode-btn">Trips by Day</button>
+        <button id="btnDistFare" class="mode-btn">Distance vs Fare</button>
+        <button id="btnDurDist" class="mode-btn">Duration vs Distance</button>
+      </div>
+      <div class="kpi" id="kpi" style="margin-top:8px;">Loading...</div>
+      <div class="warn" id="warn"></div>
+      <div id="errorBox"></div>
+    </div>
+
+    <div class="bottom-row">
+      <section class="panel">
+        <h3 class="title">Histogram</h3>
+        <p class="subtitle" id="histModeText">Mode: Trips by Hour</p>
+        <div class="toolbar">
+          <span id="histHint">Click bars to filter</span>
+          <button class="link-btn" id="clearHistBtn">Clear histogram filter</button>
+        </div>
+        <div id="histChart" class="chart"></div>
+      </section>
+
+      <section class="panel">
+        <h3 class="title">Scatterplot</h3>
+        <p class="subtitle" id="scatterModeText">Mode: Distance vs Fare</p>
+        <div class="toolbar">
+          <span id="scatterHint">Brush to select subset</span>
+          <button class="link-btn" id="clearBrushBtn">Clear scatter brush</button>
+        </div>
+        <div id="scatterChart" class="chart"></div>
+      </section>
+
+      <section class="panel">
+        <h3 class="title">Table</h3>
+        <p class="subtitle" id="tableInfo">Displaying 0 of 0 filtered trips</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr id="tableHeadRow"></tr></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="tip" class="tooltip"></div>
+
+  <script>
+    const CSV_PATH = "../data/Taxi_Trips_-_2022_20260216.csv";
+
+    const state = {
+      rawData: [],
+      histFilteredData: [],
+      filteredData: [],
+      renderedScatter: [],
+      modeHistogram: "hour",
+      modeScatter: "dist_fare",
+      selectedHistogramBins: new Set(),
+      scatterBrushExtent: null,
+      warning: "",
+      fields: null
+    };
+
+    const ui = {
+      btnHour: document.getElementById("btnHour"),
+      btnDay: document.getElementById("btnDay"),
+      btnDistFare: document.getElementById("btnDistFare"),
+      btnDurDist: document.getElementById("btnDurDist"),
+      kpi: document.getElementById("kpi"),
+      warn: document.getElementById("warn"),
+      errorBox: document.getElementById("errorBox"),
+      histModeText: document.getElementById("histModeText"),
+      scatterModeText: document.getElementById("scatterModeText"),
+      tableInfo: document.getElementById("tableInfo"),
+      scatterHint: document.getElementById("scatterHint"),
+      clearHistBtn: document.getElementById("clearHistBtn"),
+      clearBrushBtn: document.getElementById("clearBrushBtn"),
+      histChart: document.getElementById("histChart"),
+      scatterChart: document.getElementById("scatterChart"),
+      tableHeadRow: document.getElementById("tableHeadRow"),
+      tableBody: document.getElementById("tableBody"),
+      tip: document.getElementById("tip")
+    };
+
+    function norm(s) {
+      return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
+    }
+
+    function detectColumnName(columns, candidates) {
+      const map = new Map(columns.map((c) => [norm(c), c]));
+      for (const cand of candidates) {
+        const hit = map.get(norm(cand));
+        if (hit) return hit;
+      }
+      return null;
+    }
+
+    function parseDateValue(v) {
+      if (v == null || v === "") return null;
+      const s = String(v).trim();
+      let m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i.exec(s);
+      if (m) {
+        let mm = +m[1] - 1;
+        let dd = +m[2];
+        let yy = +m[3];
+        let hh = +m[4];
+        let mi = +m[5];
+        let ss = +(m[6] || 0);
+        const ap = m[7].toUpperCase();
+        if (hh === 12) hh = ap === "AM" ? 0 : 12;
+        else if (ap === "PM") hh += 12;
+        const d = new Date(yy, mm, dd, hh, mi, ss);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+      if (m) {
+        const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    function parseNum(v) {
+      if (v == null || v === "") return null;
+      const n = +String(v).replace(/[$,\s]/g, "");
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function formatTime(d) {
+      return d3.timeFormat("%Y-%m-%d %H:%M")(d);
+    }
+
+    function showTip(event, html) {
+      ui.tip.innerHTML = html;
+      ui.tip.style.opacity = 1;
+      ui.tip.style.left = `${event.clientX + 10}px`;
+      ui.tip.style.top = `${event.clientY + 10}px`;
+    }
+
+    function moveTip(event) {
+      ui.tip.style.left = `${event.clientX + 10}px`;
+      ui.tip.style.top = `${event.clientY + 10}px`;
+    }
+
+    function hideTip() {
+      ui.tip.style.opacity = 0;
+    }
+
+    function detectFields(columns) {
+      const pickupCol = detectColumnName(columns, [
+        "Trip Start Timestamp", "trip_start_timestamp", "pickup_datetime", "tpep_pickup_datetime", "Trip Start", "start_time"
+      ]);
+      const endCol = detectColumnName(columns, [
+        "Trip End Timestamp", "trip_end_timestamp", "dropoff_datetime", "tpep_dropoff_datetime", "Trip End", "end_time"
+      ]);
+      const distanceCol = detectColumnName(columns, [
+        "Trip Miles", "trip_miles", "trip_distance", "distance", "miles"
+      ]);
+      const fareCol = detectColumnName(columns, [
+        "Fare", "fare", "Fare Amount", "fare_amount", "Trip Total", "trip_total", "total_amount"
+      ]);
+      const durationCol = detectColumnName(columns, [
+        "Trip Seconds", "trip_seconds", "trip duration", "trip_duration", "duration_minutes", "duration", "trip_time_in_secs"
+      ]);
+
+      return { pickupCol, endCol, distanceCol, fareCol, durationCol };
+    }
+
+    function parseRows(rows, fields) {
+      const out = [];
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const startTime = fields.pickupCol ? parseDateValue(row[fields.pickupCol]) : null;
+        if (!startTime) continue;
+
+        const endTime = fields.endCol ? parseDateValue(row[fields.endCol]) : null;
+        let durationMinutes = null;
+
+        if (fields.durationCol) {
+          const dRaw = parseNum(row[fields.durationCol]);
+          if (dRaw != null) {
+            const isSeconds = norm(fields.durationCol).includes("second") || norm(fields.durationCol).includes("secs");
+            durationMinutes = isSeconds ? dRaw / 60 : dRaw;
+          }
+        }
+
+        if (durationMinutes == null && endTime && endTime.getTime() >= startTime.getTime()) {
+          durationMinutes = (endTime.getTime() - startTime.getTime()) / 60000;
+        }
+
+        if (durationMinutes != null && durationMinutes < 0) durationMinutes = null;
+
+        const distanceMiles = fields.distanceCol ? parseNum(row[fields.distanceCol]) : null;
+        const fareAmount = fields.fareCol ? parseNum(row[fields.fareCol]) : null;
+
+        out.push({
+          id: i,
+          raw: row,
+          startTime,
+          endTime,
+          durationMinutes,
+          distanceMiles,
+          fareAmount,
+          hourOfDay: startTime.getHours(),
+          dayOfWeek: startTime.getDay()
+        });
+      }
+      return out;
+    }
+
+    function hasAny(data, key) {
+      for (let i = 0; i < data.length; i++) {
+        if (data[i][key] != null && Number.isFinite(data[i][key])) return true;
+      }
+      return false;
+    }
+
+    function currentScatterXY(record) {
+      if (state.modeScatter === "dist_fare") {
+        return { x: record.distanceMiles, y: record.fareAmount };
+      }
+      return { x: record.durationMinutes, y: record.distanceMiles };
+    }
+
+    function canUseScatterMode(mode) {
+      if (mode === "dist_fare") {
+        return hasAny(state.rawData, "distanceMiles") && hasAny(state.rawData, "fareAmount");
+      }
+      return hasAny(state.rawData, "durationMinutes") && hasAny(state.rawData, "distanceMiles");
+    }
+
+    function applyFilters() {
+      const histOnly = [];
+      for (let i = 0; i < state.rawData.length; i++) {
+        const r = state.rawData[i];
+
+        if (state.selectedHistogramBins.size > 0) {
+          const bin = state.modeHistogram === "hour" ? r.hourOfDay : r.dayOfWeek;
+          if (!state.selectedHistogramBins.has(bin)) continue;
+        }
+
+        histOnly.push(r);
+      }
+
+      state.histFilteredData = histOnly;
+
+      if (!state.scatterBrushExtent) {
+        state.filteredData = histOnly;
+        return;
+      }
+
+      const out = [];
+      for (let i = 0; i < histOnly.length; i++) {
+        const r = histOnly[i];
+
+        if (state.scatterBrushExtent) {
+          const xy = currentScatterXY(r);
+          if (xy.x == null || xy.y == null) continue;
+          if (xy.x < state.scatterBrushExtent.x0 || xy.x > state.scatterBrushExtent.x1) continue;
+          if (xy.y < state.scatterBrushExtent.y0 || xy.y > state.scatterBrushExtent.y1) continue;
+        }
+
+        out.push(r);
+      }
+      state.filteredData = out;
+    }
+
+    function histogramSeries(data) {
+      if (state.modeHistogram === "hour") {
+        const arr = Array.from({ length: 24 }, (_, h) => ({ bin: h, label: String(h), count: 0 }));
+        for (let i = 0; i < data.length; i++) arr[data[i].hourOfDay].count++;
+        return arr;
+      }
+      const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const arr = Array.from({ length: 7 }, (_, d) => ({ bin: d, label: labels[d], count: 0 }));
+      for (let i = 0; i < data.length; i++) arr[data[i].dayOfWeek].count++;
+      return arr;
+    }
+
+    function sampleForScatter(data, maxPoints = 20000) {
+      if (data.length <= maxPoints) return data;
+      const out = [];
+      const step = data.length / maxPoints;
+      for (let i = 0; i < maxPoints; i++) out.push(data[Math.floor(i * step)]);
+      return out;
+    }
+
+    function axisLabels() {
+      if (state.modeScatter === "dist_fare") {
+        return { x: "Distance (miles)", y: "Fare/Total" };
+      }
+      return { x: "Duration (minutes)", y: "Distance (miles)" };
+    }
+
+    function updateModeButtons() {
+      ui.btnHour.classList.toggle("active", state.modeHistogram === "hour");
+      ui.btnDay.classList.toggle("active", state.modeHistogram === "day");
+      ui.btnDistFare.classList.toggle("active", state.modeScatter === "dist_fare");
+      ui.btnDurDist.classList.toggle("active", state.modeScatter === "dur_dist");
+
+      ui.btnDistFare.disabled = !canUseScatterMode("dist_fare");
+      ui.btnDurDist.disabled = !canUseScatterMode("dur_dist");
+
+      ui.histModeText.textContent = `Mode: ${state.modeHistogram === "hour" ? "Trips by Hour" : "Trips by Day"}`;
+      ui.scatterModeText.textContent = `Mode: ${state.modeScatter === "dist_fare" ? "Distance vs Fare" : "Duration vs Distance"}`;
+    }
+
+    function renderHistogram() {
+      const data = histogramSeries(state.filteredData);
+      const margin = { top: 8, right: 8, bottom: 34, left: 42 };
+      const width = Math.max(320, ui.histChart.clientWidth);
+      const height = Math.max(260, ui.histChart.clientHeight);
+      const iw = width - margin.left - margin.right;
+      const ih = height - margin.top - margin.bottom;
+
+      const svg = d3.select(ui.histChart).selectAll("svg").data([null]).join("svg")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("preserveAspectRatio", "none");
+
+      const g = svg.selectAll("g.main").data([null]).join("g")
+        .attr("class", "main")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      const x = d3.scaleBand().domain(data.map((d) => d.bin)).range([0, iw]).padding(0.12);
+      const y = d3.scaleLinear().domain([0, d3.max(data, (d) => d.count) || 1]).nice().range([ih, 0]);
+
+      g.selectAll("g.grid").data([null]).join("g").attr("class", "grid")
+        .call(d3.axisLeft(y).ticks(4).tickSize(-iw).tickFormat(""));
+
+      g.selectAll("rect.bar").data(data, (d) => d.bin).join("rect")
+        .attr("class", (d) => `bar${state.selectedHistogramBins.has(d.bin) ? " selected" : ""}`)
+        .attr("x", (d) => x(d.bin))
+        .attr("y", (d) => y(d.count))
+        .attr("width", x.bandwidth())
+        .attr("height", (d) => ih - y(d.count))
+        .on("click", function(event, d) {
+          const isMulti = event.ctrlKey || event.metaKey;
+          if (isMulti) {
+            if (state.selectedHistogramBins.has(d.bin)) state.selectedHistogramBins.delete(d.bin);
+            else state.selectedHistogramBins.add(d.bin);
+          } else {
+            if (state.selectedHistogramBins.size === 1 && state.selectedHistogramBins.has(d.bin)) {
+              state.selectedHistogramBins.clear();
+            } else {
+              state.selectedHistogramBins.clear();
+              state.selectedHistogramBins.add(d.bin);
+            }
+          }
+          render();
+        })
+        .on("mouseenter", (event, d) => showTip(event, `<b>${d.label}</b><br/>Count: ${d.count.toLocaleString()}`))
+        .on("mousemove", moveTip)
+        .on("mouseleave", hideTip);
+
+      const xAxis = d3.axisBottom(x).tickFormat((bin) => data.find((d) => d.bin === bin).label);
+      g.selectAll("g.x-axis").data([null]).join("g")
+        .attr("class", "axis x-axis")
+        .attr("transform", `translate(0,${ih})`)
+        .call(xAxis);
+
+      g.selectAll("g.y-axis").data([null]).join("g")
+        .attr("class", "axis y-axis")
+        .call(d3.axisLeft(y).ticks(4).tickFormat(d3.format("~s")));
+    }
+
+    function renderScatter() {
+      const margin = { top: 8, right: 12, bottom: 40, left: 52 };
+      const width = Math.max(360, ui.scatterChart.clientWidth);
+      const height = Math.max(260, ui.scatterChart.clientHeight);
+      const iw = width - margin.left - margin.right;
+      const ih = height - margin.top - margin.bottom;
+
+      const base = state.histFilteredData;
+      const usable = [];
+      for (let i = 0; i < base.length; i++) {
+        const xy = currentScatterXY(base[i]);
+        if (xy.x != null && xy.y != null && Number.isFinite(xy.x) && Number.isFinite(xy.y)) {
+          usable.push({ rec: base[i], x: xy.x, y: xy.y });
+        }
+      }
+
+      const labels = axisLabels();
+
+      if (!usable.length) {
+        d3.select(ui.scatterChart).selectAll("svg").remove();
+        ui.scatterHint.textContent = "No valid points for current scatter mode";
+        state.renderedScatter = [];
+        return;
+      }
+
+      ui.scatterHint.textContent = base.length > 20000 ? "Rendering sampled 20,000 points (full data still filtered)" : "Brush to select subset";
+
+      const sampled = sampleForScatter(usable, 20000);
+      state.renderedScatter = sampled;
+
+      const xDomain = state.modeScatter === "dist_fare"
+        ? [0, 200]
+        : [0, 15000];
+      const yDomain = state.modeScatter === "dist_fare"
+        ? [0, 300]
+        : [0, 400];
+
+      const x = d3.scaleLinear().domain(xDomain).nice().range([0, iw]);
+      const y = d3.scaleLinear().domain(yDomain).nice().range([ih, 0]);
+
+      const svg = d3.select(ui.scatterChart).selectAll("svg").data([null]).join("svg")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("preserveAspectRatio", "none");
+
+      const g = svg.selectAll("g.main").data([null]).join("g")
+        .attr("class", "main")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      g.selectAll("g.grid-x").data([null]).join("g").attr("class", "grid")
+        .attr("transform", `translate(0,${ih})`)
+        .call(d3.axisBottom(x).ticks(6).tickSize(-ih).tickFormat(""));
+
+      g.selectAll("g.grid-y").data([null]).join("g").attr("class", "grid")
+        .call(d3.axisLeft(y).ticks(6).tickSize(-iw).tickFormat(""));
+
+      g.selectAll("circle.point").data(sampled, (d) => d.rec.id).join("circle")
+        .attr("class", "point")
+        .attr("data-id", (d) => d.rec.id)
+        .attr("cx", (d) => x(d.x))
+        .attr("cy", (d) => y(d.y))
+        .attr("r", 2.2)
+        .on("mouseenter", (event, d) => {
+          const modeText = state.modeScatter === "dist_fare"
+            ? `Distance: ${d.x.toFixed(2)}<br/>Fare: ${d.y.toFixed(2)}`
+            : `Duration: ${d.x.toFixed(1)}<br/>Distance: ${d.y.toFixed(2)}`;
+          showTip(event, `${modeText}<br/>Pickup: ${formatTime(d.rec.startTime)}`);
+        })
+        .on("mousemove", moveTip)
+        .on("mouseleave", hideTip);
+
+      g.selectAll("g.x-axis").data([null]).join("g")
+        .attr("class", "axis x-axis")
+        .attr("transform", `translate(0,${ih})`)
+        .call(d3.axisBottom(x).ticks(6));
+
+      g.selectAll("g.y-axis").data([null]).join("g")
+        .attr("class", "axis y-axis")
+        .call(d3.axisLeft(y).ticks(6));
+
+      g.selectAll("text.xlabel").data([null]).join("text")
+        .attr("class", "xlabel")
+        .attr("x", iw / 2)
+        .attr("y", ih + 34)
+        .attr("text-anchor", "middle")
+        .attr("fill", "#4b5f76")
+        .attr("font-size", 11)
+        .text(labels.x);
+
+      g.selectAll("text.ylabel").data([null]).join("text")
+        .attr("class", "ylabel")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -ih / 2)
+        .attr("y", -40)
+        .attr("text-anchor", "middle")
+        .attr("fill", "#4b5f76")
+        .attr("font-size", 11)
+        .text(labels.y);
+
+      const brush = d3.brush()
+        .extent([[0, 0], [iw, ih]])
+        .on("end", (event) => {
+          if (!event.sourceEvent) return;
+          if (!event.selection) {
+            if (state.scatterBrushExtent) {
+              state.scatterBrushExtent = null;
+              render();
+            }
+            return;
+          }
+          const [[x0p, y0p], [x1p, y1p]] = event.selection;
+          state.scatterBrushExtent = {
+            x0: x.invert(Math.min(x0p, x1p)),
+            x1: x.invert(Math.max(x0p, x1p)),
+            y0: y.invert(Math.max(y0p, y1p)),
+            y1: y.invert(Math.min(y0p, y1p))
+          };
+          render();
+        });
+
+      const brushG = g.selectAll("g.brush").data([null]).join("g").attr("class", "brush").call(brush);
+
+      if (state.scatterBrushExtent) {
+        brushG.call(brush.move, [
+          [x(state.scatterBrushExtent.x0), y(state.scatterBrushExtent.y1)],
+          [x(state.scatterBrushExtent.x1), y(state.scatterBrushExtent.y0)]
+        ]);
+      } else {
+        brushG.call(brush.move, null);
+      }
+    }
+
+    function renderTable() {
+      const sorted = [...state.filteredData].sort((a, b) => b.startTime - a.startTime);
+      const rows = sorted.slice(0, 50);
+
+      const hasDist = hasAny(state.rawData, "distanceMiles");
+      const hasFare = hasAny(state.rawData, "fareAmount");
+      const hasDur = hasAny(state.rawData, "durationMinutes");
+
+      const cols = [{ key: "time", label: "Pickup time" }];
+      if (hasDist) cols.push({ key: "dist", label: "Distance (miles)" });
+      if (hasFare) cols.push({ key: "fare", label: "Fare/Total" });
+      if (hasDur) cols.push({ key: "dur", label: "Duration (min)" });
+
+      ui.tableHeadRow.innerHTML = cols.map((c) => `<th>${c.label}</th>`).join("");
+
+      ui.tableBody.innerHTML = rows.map((r) => {
+        const vals = [];
+        vals.push(`<td>${formatTime(r.startTime)}</td>`);
+        if (hasDist) vals.push(`<td>${r.distanceMiles == null ? "" : r.distanceMiles.toFixed(2)}</td>`);
+        if (hasFare) vals.push(`<td>${r.fareAmount == null ? "" : r.fareAmount.toFixed(2)}</td>`);
+        if (hasDur) vals.push(`<td>${r.durationMinutes == null ? "" : r.durationMinutes.toFixed(1)}</td>`);
+        return `<tr data-id="${r.id}">${vals.join("")}</tr>`;
+      }).join("") || `<tr><td colspan="${cols.length}">No rows</td></tr>`;
+
+      ui.tableInfo.textContent = `Displaying ${rows.length} of ${state.filteredData.length.toLocaleString()} filtered trips`;
+
+      ui.tableBody.querySelectorAll("tr[data-id]").forEach((tr) => {
+        tr.addEventListener("mouseenter", () => {
+          const id = tr.getAttribute("data-id");
+          d3.select(ui.scatterChart).selectAll("circle.point").classed("hl", false);
+          d3.select(ui.scatterChart).select(`circle.point[data-id='${id}']`).classed("hl", true);
+        });
+        tr.addEventListener("mouseleave", () => {
+          d3.select(ui.scatterChart).selectAll("circle.point").classed("hl", false);
+        });
+      });
+    }
+
+    function updateWarnings() {
+      ui.warn.textContent = state.warning || "";
+    }
+
+    function renderKPI() {
+      ui.kpi.innerHTML = `<strong>Showing ${state.filteredData.length.toLocaleString()} of ${state.rawData.length.toLocaleString()} trips</strong>`;
+    }
+
+    function render() {
+      applyFilters();
+      updateModeButtons();
+      renderKPI();
+      updateWarnings();
+      renderHistogram();
+      renderScatter();
+      renderTable();
+    }
+
+    function switchHistogramMode(mode) {
+      if (state.modeHistogram === mode) return;
+      state.modeHistogram = mode;
+      state.selectedHistogramBins.clear();
+      state.warning = "";
+      render();
+    }
+
+    function switchScatterMode(mode) {
+      if (state.modeScatter === mode) return;
+      if (!canUseScatterMode(mode)) {
+        state.warning = mode === "dist_fare"
+          ? "Distance/Fare fields are missing, so Distance vs Fare is unavailable."
+          : "Duration/Distance fields are missing, so Duration vs Distance is unavailable.";
+        updateWarnings();
+        return;
+      }
+
+      state.modeScatter = mode;
+      if (state.scatterBrushExtent) {
+        state.scatterBrushExtent = null;
+        state.warning = "Scatter brush was cleared because axis mode changed.";
+      } else {
+        state.warning = "";
+      }
+      render();
+    }
+
+    function wireUI() {
+      ui.btnHour.addEventListener("click", () => switchHistogramMode("hour"));
+      ui.btnDay.addEventListener("click", () => switchHistogramMode("day"));
+      ui.btnDistFare.addEventListener("click", () => switchScatterMode("dist_fare"));
+      ui.btnDurDist.addEventListener("click", () => switchScatterMode("dur_dist"));
+
+      ui.clearHistBtn.addEventListener("click", () => {
+        if (state.selectedHistogramBins.size > 0) {
+          state.selectedHistogramBins.clear();
+          render();
+        }
+      });
+
+      ui.clearBrushBtn.addEventListener("click", () => {
+        if (state.scatterBrushExtent) {
+          state.scatterBrushExtent = null;
+          render();
+        }
+      });
+
+      window.addEventListener("resize", () => requestAnimationFrame(render));
+    }
+
+    function showError(msg) {
+      ui.errorBox.innerHTML = `<div class="error">${msg}</div>`;
+    }
+
+    async function init() {
+      try {
+        const rawRows = await d3.csv(CSV_PATH);
+        if (!rawRows.length) {
+          showError("CSV loaded, but no rows were found.");
+          return;
+        }
+
+        const columns = rawRows.columns || Object.keys(rawRows[0]);
+        const fields = detectFields(columns);
+        state.fields = fields;
+
+        if (!fields.pickupCol) {
+          showError("Could not detect pickup datetime column. Check CSV headers.");
+          return;
+        }
+
+        state.rawData = parseRows(rawRows, fields);
+        if (!state.rawData.length) {
+          showError("No valid rows after parsing timestamps.");
+          return;
+        }
+
+        if (!canUseScatterMode(state.modeScatter)) {
+          if (canUseScatterMode("dur_dist")) {
+            state.modeScatter = "dur_dist";
+            state.warning = "Distance vs Fare is unavailable due to missing fields; switched to Duration vs Distance.";
+          } else {
+            state.warning = "Scatter modes are limited because required numeric fields are missing.";
+          }
+        }
+
+        wireUI();
+        render();
+
+        const ro = new ResizeObserver(() => requestAnimationFrame(render));
+        ro.observe(ui.histChart);
+        ro.observe(ui.scatterChart);
+      } catch (err) {
+        showError(`Failed to load CSV. Serve files with a local web server (python -m http.server). Details: ${err.message || err}`);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
