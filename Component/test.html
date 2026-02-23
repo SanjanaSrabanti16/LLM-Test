@@ -683,11 +683,11 @@
         .attr("class", "main")
         .attr("transform", `translate(${margin.left},${margin.top})`);
 
-      g.selectAll("g.grid-x").data([null]).join("g").attr("class", "grid")
+      g.selectAll("g.grid-x").data([null]).join("g").attr("class", "grid grid-x")
         .attr("transform", `translate(0,${ih})`)
         .call(d3.axisBottom(x).ticks(6).tickSize(-ih).tickFormat(""));
 
-      g.selectAll("g.grid-y").data([null]).join("g").attr("class", "grid")
+      g.selectAll("g.grid-y").data([null]).join("g").attr("class", "grid grid-y")
         .call(d3.axisLeft(y).ticks(6).tickSize(-iw).tickFormat(""));
 
       g.selectAll("circle.point").data(sampled, (d) => d.rec.id).join("circle")
