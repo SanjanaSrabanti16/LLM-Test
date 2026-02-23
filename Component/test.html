@@ -662,6 +662,15 @@
 
       ui.scatterHint.textContent = base.length > 20000 ? "Rendering sampled 20,000 points (full data still filtered)" : "Brush to select subset";
 
+      // Count overlapping points at rounded coordinates to show "trips at point" in tooltip.
+      const pointKey = (xVal, yVal) => `${xVal.toFixed(2)}|${yVal.toFixed(2)}`;
+      const overlapCounts = new Map();
+      for (let i = 0; i < usable.length; i++) {
+        const key = pointKey(usable[i].x, usable[i].y);
+        usable[i].ptKey = key;
+        overlapCounts.set(key, (overlapCounts.get(key) || 0) + 1);
+      }
+
       const sampled = sampleForScatter(usable, 20000);
       state.renderedScatter = sampled;
 
@@ -700,7 +709,8 @@
           const modeText = state.modeScatter === "dist_fare"
             ? `Distance: ${d.x.toFixed(2)}<br/>Fare: ${d.y.toFixed(2)}`
             : `Duration: ${d.x.toFixed(1)}<br/>Distance: ${d.y.toFixed(2)}`;
-          showTip(event, `${modeText}<br/>Pickup: ${formatTime(d.rec.startTime)}`);
+          const tripsAtPoint = overlapCounts.get(d.ptKey) || 1;
+          showTip(event, `${modeText}<br/>Trips at point: ${tripsAtPoint}<br/>Pickup: ${formatTime(d.rec.startTime)}`);
         })
         .on("mousemove", moveTip)
         .on("mouseleave", hideTip);
