@@ -660,7 +660,7 @@
         return;
       }
 
-      ui.scatterHint.textContent = base.length > 20000 ? "Rendering sampled 20,000 points (full data still filtered)" : "Brush to select subset";
+      ui.scatterHint.textContent = "Brush to select subset";
 
       // Count overlapping points at rounded coordinates to show "trips at point" in tooltip.
       const pointKey = (xVal, yVal) => `${xVal.toFixed(2)}|${yVal.toFixed(2)}`;
@@ -671,7 +671,9 @@
         overlapCounts.set(key, (overlapCounts.get(key) || 0) + 1);
       }
 
-      const sampled = sampleForScatter(usable, 20000);
+      // Keep scatterplot stable during brushing: always render all usable points.
+      // Brush affects linked filtering (histogram/table), not which points are drawn here.
+      const sampled = usable;
       state.renderedScatter = sampled;
 
       const xDomain = state.modeScatter === "dist_fare"
