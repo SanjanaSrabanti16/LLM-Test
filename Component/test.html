@@ -474,6 +474,20 @@
       return { x: record.durationMinutes, y: record.distanceMiles };
     }
 
+    function scatterConsistencyIssue(record) {
+      if (state.modeScatter === "dist_fare") {
+        if (record.distanceMiles == null || record.fareAmount == null) return "missing";
+        if (record.distanceMiles === 0 && record.fareAmount > 0) return "zero-distance-positive-fare";
+        if (record.distanceMiles > 0 && record.fareAmount === 0) return "positive-distance-zero-fare";
+        return null;
+      }
+
+      if (record.durationMinutes == null || record.distanceMiles == null) return "missing";
+      if (record.distanceMiles === 0 && record.durationMinutes > 0) return "zero-distance-positive-duration";
+      if (record.durationMinutes === 0 && record.distanceMiles > 0) return "positive-distance-zero-duration";
+      return null;
+    }
+
     function canUseScatterMode(mode) {
       if (mode === "dist_fare") {
         return hasAny(state.rawData, "distanceMiles") && hasAny(state.rawData, "fareAmount");
@@ -539,7 +553,7 @@
 
     function axisLabels() {
       if (state.modeScatter === "dist_fare") {
-        return { x: "Distance (miles)", y: "Fare/Total" };
+        return { x: "Distance (miles)", y: "Fare" };
       }
       return { x: "Duration (minutes)", y: "Distance (miles)" };
     }
@@ -644,9 +658,14 @@
 
       const base = state.histFilteredData;
       const usable = [];
+      let excludedInconsistent = 0;
       for (let i = 0; i < base.length; i++) {
         const xy = currentScatterXY(base[i]);
         if (xy.x != null && xy.y != null && Number.isFinite(xy.x) && Number.isFinite(xy.y)) {
+          if (scatterConsistencyIssue(base[i])) {
+            excludedInconsistent++;
+            continue;
+          }
           usable.push({ rec: base[i], x: xy.x, y: xy.y });
         }
       }
@@ -660,7 +679,9 @@
         return;
       }
 
-      ui.scatterHint.textContent = "Brush to select subset";
+      ui.scatterHint.textContent = excludedInconsistent
+        ? `Brush to select subset. Excluded ${excludedInconsistent.toLocaleString()} inconsistent records for this mode.`
+        : "Brush to select subset";
 
       // Count overlapping points at rounded coordinates to show "trips at point" in tooltip.
       const pointKey = (xVal, yVal) => `${xVal.toFixed(2)}|${yVal.toFixed(2)}`;
@@ -788,7 +809,7 @@
 
       const cols = [{ key: "time", label: "Pickup time" }];
       if (hasDist) cols.push({ key: "dist", label: "Distance (miles)" });
-      if (hasFare) cols.push({ key: "fare", label: "Fare/Total" });
+      if (hasFare) cols.push({ key: "fare", label: "Fare" });
       if (hasDur) cols.push({ key: "dur", label: "Duration (min)" });
 
       ui.tableHeadRow.innerHTML = cols.map((c) => `<th>${c.label}</th>`).join("");
